@@ -1,63 +1,107 @@
 using System.Collections.Generic;
+using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace TrickyParcels
 {
-    public enum GameState { Playing, Won, Lost }
+    public enum GameState { Idle, Playing, Won, Lost }
 
     public class GameManager : MonoBehaviour
     {
         public static GameManager Instance { get; private set; }
 
-        [Header("Level 1: First Sort parameters")]
-        public int quota = 10;
-        public float spawnInterval = 3f;
-        public float softTimeCap = 90f;
-        public float spawnJamFailDelay = 3f; // jam telegraph before spawn-blocked = fail
-
-        public GameState State { get; private set; } = GameState.Playing;
-        public int Delivered { get; private set; } = 0;
+        public GameState State { get; private set; } = GameState.Idle;
+        public int Delivered { get; private set; }
         public float TimeRemaining { get; private set; }
 
+        private LevelConfig _config;
+        private float _levelTime;
         private float _spawnTimer;
-        private int _spawned = 0;
-        private float _spawnBlockedTimer = 0f;
+        private float _spawnBlockedTimer;
+        private int _totalCreated;
+        private readonly Queue<PackageLabel> _spawnQueue = new Queue<PackageLabel>();
+        private readonly List<BurstEvent> _pendingBursts = new List<BurstEvent>();
         private readonly List<Package> _activePackages = new List<Package>();
+        private readonly Dictionary<Vector2Int, List<float>> _chuteDeliveryLog = new Dictionary<Vector2Int, List<float>>();
+
+        [Header("Tutorial Pause")]
+        public GameObject tutorialPanel;
 
         void Awake()
         {
             Instance = this;
-            TimeRemaining = softTimeCap;
+        }
+
+        public void LoadLevel(LevelConfig config)
+        {
+            _config = config;
+            State = GameState.Playing;
+            Delivered = 0;
+            TimeRemaining = config.timeCap;
+            _levelTime = 0f;
+            _spawnTimer = 0f;
+            _spawnBlockedTimer = 0f;
+            _totalCreated = 0;
+            _spawnQueue.Clear();
+            _chuteDeliveryLog.Clear();
+
+            foreach (var p in _activePackages) if (p != null) Destroy(p.gameObject);
+            _activePackages.Clear();
+
+            _pendingBursts.Clear();
+            _pendingBursts.AddRange(config.bursts);
         }
 
         void Update()
         {
             if (State != GameState.Playing) return;
+            if (tutorialPanel.gameObject.activeSelf) Time.timeScale = 0f;
+            else Time.timeScale = 1f;
 
-            TimeRemaining -= Time.deltaTime;
+            _levelTime += Time.deltaTime;
+            TimeRemaining = Mathf.Max(0f, _config.timeCap - _levelTime);
             if (TimeRemaining <= 0f)
             {
                 EndGame(false, "Time ran out before the quota was met.");
                 return;
             }
 
-            _spawnTimer += Time.deltaTime;
-            if (_spawnTimer >= spawnInterval && _spawned < quota)
+            for (int i = _pendingBursts.Count - 1; i >= 0; i--)
             {
-                TrySpawnPackage();
+                if (_levelTime >= _pendingBursts[i].atTime)
+                {
+                    foreach (var label in _pendingBursts[i].labels)
+                    {
+                        _spawnQueue.Enqueue(label);
+                        _totalCreated++;
+                    }
+                    _pendingBursts.RemoveAt(i);
+                }
             }
+
+            _spawnTimer += Time.deltaTime;
+            if (_spawnTimer >= _config.spawnInterval && _totalCreated < _config.quota)
+            {
+                _spawnTimer = 0f;
+                _spawnQueue.Enqueue(RandomLabel());
+                _totalCreated++;
+            }
+
+            TryDrainSpawnQueue();
         }
 
-        void TrySpawnPackage()
+        PackageLabel RandomLabel() => _config.labelPool[Random.Range(0, _config.labelPool.Count)];
+
+        void TryDrainSpawnQueue()
         {
+            if (_spawnQueue.Count == 0) return;
             var grid = GridManager.Instance;
 
-            if (IsCellOccupied(grid.spawnCell, null))
+            if (IsCellOccupied(grid.SpawnCell, null))
             {
                 _spawnBlockedTimer += Time.deltaTime;
-                grid.SetJamWarning(grid.spawnCell, true);
-                if (_spawnBlockedTimer >= spawnJamFailDelay)
+                grid.SetJamWarning(grid.SpawnCell, true);
+                if (_spawnBlockedTimer >= 3f)
                 {
                     EndGame(false, "The line jammed all the way back to the spawn point.");
                 }
@@ -65,14 +109,12 @@ namespace TrickyParcels
             }
 
             _spawnBlockedTimer = 0f;
-            grid.SetJamWarning(grid.spawnCell, false);
-            _spawnTimer = 0f;
-            _spawned++;
+            grid.SetJamWarning(grid.SpawnCell, false);
 
-            var label = Random.value < 0.5f ? PackageLabel.Blue : PackageLabel.Orange;
-            var go = new GameObject($"Package_{_spawned}");
+            var label = _spawnQueue.Dequeue();
+            var go = new GameObject("Package");
             var pkg = go.AddComponent<Package>();
-            pkg.Init(grid.spawnCell, label);
+            pkg.Init(grid.SpawnCell, label);
             _activePackages.Add(pkg);
         }
 
@@ -86,11 +128,32 @@ namespace TrickyParcels
             return false;
         }
 
+        public bool HasChuteCapacity(Vector2Int cell)
+        {
+            if (!_chuteDeliveryLog.TryGetValue(cell, out var log))
+            {
+                log = new List<float>();
+                _chuteDeliveryLog[cell] = log;
+            }
+            log.RemoveAll(t => Time.time - t > _config.chuteCapacityWindow);
+            return log.Count < _config.chuteCapacityMax;
+        }
+
+        public void RecordChuteDelivery(Vector2Int cell)
+        {
+            if (!_chuteDeliveryLog.TryGetValue(cell, out var log))
+            {
+                log = new List<float>();
+                _chuteDeliveryLog[cell] = log;
+            }
+            log.Add(Time.time);
+        }
+
         public void OnPackageDelivered(Package pkg)
         {
             _activePackages.Remove(pkg);
             Delivered++;
-            if (Delivered >= quota)
+            if (Delivered >= _config.quota)
             {
                 EndGame(true, "Quota met. Nice routing.");
             }
@@ -100,12 +163,20 @@ namespace TrickyParcels
         {
             if (State != GameState.Playing) return;
             State = won ? GameState.Won : GameState.Lost;
-            if (UIController.Instance != null) UIController.Instance.ShowResult(won, message);
-        }
 
-        public void RestartLevel()
-        {
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            int stars = 0;
+            if (won)
+            {
+                int tilesUsed = GridManager.Instance.CountPlacedTiles();
+                stars = 1;
+                if (tilesUsed <= Mathf.CeilToInt(_config.parTileCount * 1.5f)) stars = 2;
+                if (tilesUsed <= _config.parTileCount && !GridManager.Instance.AnyJamOccurred) stars = 3;
+
+                int levelIndex = LevelFlowController.Instance.CurrentLevelIndex;
+                LevelProgress.SetStars(levelIndex, stars);
+            }
+
+            UIController.Instance?.ShowResult(won, message, stars);
         }
     }
 }

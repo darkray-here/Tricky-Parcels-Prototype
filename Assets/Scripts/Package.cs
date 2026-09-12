@@ -30,7 +30,7 @@ namespace TrickyParcels
             currentCell = startCell;
             label = packageLabel;
             transform.position = GridManager.Instance.CellToWorld(startCell);
-            _sr.color = label == PackageLabel.Blue ? GridManager.Instance.blueColor : GridManager.Instance.orangeColor;
+            _sr.color = LabelColors.Get(label);
         }
 
         void Update()
@@ -57,7 +57,7 @@ namespace TrickyParcels
             {
                 moveDir = Direction.Right; // spawn sits on the left edge, only sensible way out
             }
-            else if (tile.type == TileType.Conveyor)
+            else if (tile.type == TileType.Conveyor || tile.type == TileType.Delay)
             {
                 moveDir = tile.direction;
             }
@@ -65,7 +65,15 @@ namespace TrickyParcels
             {
                 Direction armADir = tile.direction;
                 Direction armBDir = tile.direction.RotateClockwise();
-                moveDir = (tile.armALabel == label) ? armADir : armBDir;
+
+                if (label == PackageLabel.Wildcard)
+                {
+                    // Simplified heuristic: steer toward whichever arm's next cell is free.
+                    moveDir = GameManager.Instance.IsCellOccupied(currentCell + armADir.ToOffset(), this) ? armBDir : armADir;
+                }
+                else if (tile.armALabel == label) moveDir = armADir;
+                else if (tile.armBLabel == label) moveDir = armBDir;
+                else { MarkStuck(); return; } // this sorter isn't configured for this label yet
             }
             else
             {
@@ -91,8 +99,10 @@ namespace TrickyParcels
             bool validDestination =
                 nextTile.type == TileType.Conveyor ||
                 nextTile.type == TileType.Sorter ||
-                (nextTile.type == TileType.ChuteBlue && label == PackageLabel.Blue) ||
-                (nextTile.type == TileType.ChuteOrange && label == PackageLabel.Orange);
+                nextTile.type == TileType.Delay ||
+                (nextTile.type == TileType.Chute &&
+                 (nextTile.chuteLabel == label || label == PackageLabel.Wildcard) &&
+                 GameManager.Instance.HasChuteCapacity(nextCell));
 
             if (!validDestination)
             {
@@ -109,8 +119,13 @@ namespace TrickyParcels
             _moveLerp = 0f;
             _moveTimer = 0f;
 
-            if (nextTile.type == TileType.ChuteBlue || nextTile.type == TileType.ChuteOrange)
+            if (nextTile.type == TileType.Delay)
             {
+                _moveTimer = -nextTile.delayDuration; // pause before the next step
+            }
+            else if (nextTile.type == TileType.Chute)
+            {
+                GameManager.Instance.RecordChuteDelivery(nextCell);
                 GameManager.Instance.OnPackageDelivered(this);
                 Destroy(gameObject, moveInterval);
             }

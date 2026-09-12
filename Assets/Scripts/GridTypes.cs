@@ -4,11 +4,14 @@ namespace TrickyParcels
 {
     public enum Direction { Up, Right, Down, Left }
 
-    public enum TileType { Empty, Conveyor, Sorter, Spawn, ChuteBlue, ChuteOrange }
+    // Generic now: which specific chute a Chute cell delivers to is stored on
+    // TileData.chuteLabel, not as separate enum values.
+    public enum TileType { Empty, Conveyor, Sorter, Delay, Spawn, Chute }
 
-    public enum PackageLabel { Blue, Orange }
+    // Wildcard is a package that can enter ANY chute (Level 3 "Peak Season").
+    public enum PackageLabel { Blue, Orange, Green, Purple, Wildcard }
 
-    public enum ToolMode { Conveyor, Sorter }
+    public enum ToolMode { Conveyor, Sorter, Delay }
 
     public static class DirectionUtil
     {
@@ -24,8 +27,8 @@ namespace TrickyParcels
             }
         }
 
-        // Used both for rotating a placed conveyor and for finding a Sorter's
-        // second output arm (which always sits 90 degrees clockwise of the first).
+        // Also used to find a Sorter's second output arm: always 90 deg
+        // clockwise of its first arm.
         public static Direction RotateClockwise(this Direction dir)
         {
             return (Direction)(((int)dir + 1) % 4);
@@ -40,6 +43,22 @@ namespace TrickyParcels
                 case Direction.Down: return -90f;
                 case Direction.Left: return 180f;
                 default: return 0f;
+            }
+        }
+    }
+
+    public static class LabelColors
+    {
+        public static Color Get(PackageLabel label)
+        {
+            switch (label)
+            {
+                case PackageLabel.Blue: return new Color(0.25f, 0.5f, 0.95f);
+                case PackageLabel.Orange: return new Color(0.95f, 0.55f, 0.15f);
+                case PackageLabel.Green: return new Color(0.35f, 0.75f, 0.35f);
+                case PackageLabel.Purple: return new Color(0.6f, 0.35f, 0.85f);
+                case PackageLabel.Wildcard: return new Color(0.8f, 0.8f, 0.2f);
+                default: return Color.white;
             }
         }
     }

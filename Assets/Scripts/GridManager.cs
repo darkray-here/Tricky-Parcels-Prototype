@@ -8,57 +8,70 @@ namespace TrickyParcels
     {
         public static GridManager Instance { get; private set; }
 
-        [Header("Grid Settings (Level 1: First Sort)")]
-        public int width = 5;
-        public int height = 5;
-        public float cellSize = 1.2f;
-
-        [Header("Fixed Cells")]
-        public Vector2Int spawnCell = new Vector2Int(0, 2);
-        public Vector2Int chuteBlueCell = new Vector2Int(4, 0);
-        public Vector2Int chuteOrangeCell = new Vector2Int(4, 4);
-
         [Header("Colors (plain shapes only, no art)")]
         public Color emptyColor = new Color(0.85f, 0.85f, 0.85f);
         public Color conveyorColor = new Color(0.35f, 0.75f, 0.4f);
         public Color sorterColor = new Color(0.9f, 0.75f, 0.2f);
+        public Color delayColor = new Color(0.5f, 0.55f, 0.85f);
         public Color spawnColor = new Color(0.3f, 0.3f, 0.3f);
-        public Color blueColor = new Color(0.25f, 0.5f, 0.95f);
-        public Color orangeColor = new Color(0.95f, 0.55f, 0.15f);
         public Color jamWarningColor = Color.red;
 
         public ToolMode currentTool = ToolMode.Conveyor;
 
-        // UIController subscribes to this to know when to open the sorter popover.
+        // UIController subscribes to know when to open the sorter popover.
         public static event Action<Vector2Int> OnSorterTileClicked;
+
+        public LevelConfig CurrentConfig { get; private set; }
+        public int Width { get; private set; }
+        public int Height { get; private set; }
+        public Vector2Int SpawnCell { get; private set; }
+        public bool AnyJamOccurred { get; private set; }
 
         private TileData[,] _grid;
         private SpriteRenderer[,] _visuals;
         private Transform[,] _indicators;
         private readonly Dictionary<Vector2Int, Transform[]> _sorterArmVisuals = new Dictionary<Vector2Int, Transform[]>();
-        private bool _sorterPlaced = false;
+
+        private int _sorterPlaced, _delayPlaced, _conveyorPlaced;
 
         void Awake()
         {
             Instance = this;
-            BuildGrid();
         }
 
         void Update()
         {
+            if (CurrentConfig == null) return;
+            if (GameManager.Instance == null || GameManager.Instance.State != GameState.Playing) return;
+            if (UIController.Instance != null && UIController.Instance.IsBlockingPanelOpen()) return;
+            if (UnityEngine.EventSystems.EventSystem.current != null &&
+                UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject()) return;
+
             if (Input.GetMouseButtonDown(0)) HandleClick(false);
             if (Input.GetMouseButtonDown(1)) HandleClick(true);
         }
 
-        void BuildGrid()
+        public void LoadLevel(LevelConfig config)
         {
-            _grid = new TileData[width, height];
-            _visuals = new SpriteRenderer[width, height];
-            _indicators = new Transform[width, height];
+            CurrentConfig = config;
+            Width = config.width;
+            Height = config.height;
+            SpawnCell = config.spawnCell;
+            AnyJamOccurred = false;
+            _sorterPlaced = 0;
+            _delayPlaced = 0;
+            _conveyorPlaced = 0;
+            _sorterArmVisuals.Clear();
 
-            for (int x = 0; x < width; x++)
+            foreach (Transform child in transform) Destroy(child.gameObject);
+
+            _grid = new TileData[Width, Height];
+            _visuals = new SpriteRenderer[Width, Height];
+            _indicators = new Transform[Width, Height];
+
+            for (int x = 0; x < Width; x++)
             {
-                for (int y = 0; y < height; y++)
+                for (int y = 0; y < Height; y++)
                 {
                     var cell = new Vector2Int(x, y);
                     _grid[x, y] = new TileData();
@@ -80,13 +93,20 @@ namespace TrickyParcels
                     indSr.enabled = false;
                     _indicators[x, y] = indicatorGO.transform;
 
-                    if (cell == spawnCell) _grid[x, y].type = TileType.Spawn;
-                    else if (cell == chuteBlueCell) _grid[x, y].type = TileType.ChuteBlue;
-                    else if (cell == chuteOrangeCell) _grid[x, y].type = TileType.ChuteOrange;
-
-                    RefreshVisual(cell);
+                    if (cell == config.spawnCell) _grid[x, y].type = TileType.Spawn;
                 }
             }
+
+            foreach (var chute in config.chutes)
+            {
+                var t = _grid[chute.cell.x, chute.cell.y];
+                t.type = TileType.Chute;
+                t.chuteLabel = chute.label;
+            }
+
+            for (int x = 0; x < Width; x++)
+                for (int y = 0; y < Height; y++)
+                    RefreshVisual(new Vector2Int(x, y));
         }
 
         void HandleClick(bool isRightClick)
@@ -101,17 +121,13 @@ namespace TrickyParcels
 
             if (isRightClick)
             {
-                if (tile.type == TileType.Conveyor || tile.type == TileType.Sorter)
-                {
-                    if (tile.type == TileType.Sorter) _sorterPlaced = false;
-                    tile.type = TileType.Empty;
-                    RefreshVisual(cell);
-                }
+                if (tile.type == TileType.Conveyor) { _conveyorPlaced--; tile.type = TileType.Empty; RefreshVisual(cell); }
+                else if (tile.type == TileType.Sorter) { _sorterPlaced--; tile.type = TileType.Empty; RefreshVisual(cell); }
+                else if (tile.type == TileType.Delay) { _delayPlaced--; tile.type = TileType.Empty; RefreshVisual(cell); }
                 return;
             }
 
-            if (tile.type == TileType.Spawn || tile.type == TileType.ChuteBlue || tile.type == TileType.ChuteOrange)
-                return;
+            if (tile.type == TileType.Spawn || tile.type == TileType.Chute) return;
 
             if (tile.type == TileType.Sorter)
             {
@@ -119,36 +135,64 @@ namespace TrickyParcels
                 return;
             }
 
-            if (currentTool == ToolMode.Conveyor)
+            switch (currentTool)
             {
-                if (tile.type == TileType.Empty)
-                {
-                    tile.type = TileType.Conveyor;
-                    tile.direction = Direction.Right;
-                }
-                else if (tile.type == TileType.Conveyor)
-                {
-                    tile.direction = tile.direction.RotateClockwise();
-                }
-                RefreshVisual(cell);
-            }
-            else // ToolMode.Sorter
-            {
-                if (tile.type == TileType.Empty && !_sorterPlaced)
-                {
-                    tile.type = TileType.Sorter;
-                    tile.direction = Direction.Right;
-                    _sorterPlaced = true;
+                case ToolMode.Conveyor:
+                    if (tile.type == TileType.Empty && _conveyorPlaced < CurrentConfig.conveyorBudget)
+                    {
+                        tile.type = TileType.Conveyor;
+                        tile.direction = Direction.Right;
+                        _conveyorPlaced++;
+                    }
+                    else if (tile.type == TileType.Conveyor)
+                    {
+                        tile.direction = tile.direction.RotateClockwise();
+                    }
                     RefreshVisual(cell);
-                }
+                    break;
+
+                case ToolMode.Sorter:
+                    if (tile.type == TileType.Empty && _sorterPlaced < CurrentConfig.sorterBudget)
+                    {
+                        tile.type = TileType.Sorter;
+                        tile.direction = Direction.Right;
+                        var labels = CurrentConfig.labelPool.FindAll(l => l != PackageLabel.Wildcard);
+                        tile.armALabel = labels.Count > 0 ? labels[0] : PackageLabel.Blue;
+                        tile.armBLabel = labels.Count > 1 ? labels[1] : tile.armALabel;
+                        _sorterPlaced++;
+                        RefreshVisual(cell);
+                    }
+                    break;
+
+                case ToolMode.Delay:
+                    if (tile.type == TileType.Empty && _delayPlaced < CurrentConfig.delayBudget)
+                    {
+                        tile.type = TileType.Delay;
+                        tile.direction = Direction.Right;
+                        tile.delayDuration = CurrentConfig.delayDuration;
+                        _delayPlaced++;
+                    }
+                    else if (tile.type == TileType.Delay)
+                    {
+                        tile.direction = tile.direction.RotateClockwise();
+                    }
+                    RefreshVisual(cell);
+                    break;
             }
         }
 
-        public void SwapSorterArms(Vector2Int cell)
+        // Cycles one sorter arm to the next non-Wildcard label in the level's pool.
+        public void CycleSorterArm(Vector2Int cell, bool armA)
         {
             var tile = GetTile(cell);
             if (tile == null || tile.type != TileType.Sorter) return;
-            (tile.armALabel, tile.armBLabel) = (tile.armBLabel, tile.armALabel);
+            var labels = CurrentConfig.labelPool.FindAll(l => l != PackageLabel.Wildcard);
+            if (labels.Count == 0) return;
+
+            PackageLabel current = armA ? tile.armALabel : tile.armBLabel;
+            int idx = labels.IndexOf(current);
+            PackageLabel next = labels[(idx + 1) % labels.Count];
+            if (armA) tile.armALabel = next; else tile.armBLabel = next;
             RefreshVisual(cell);
         }
 
@@ -158,12 +202,12 @@ namespace TrickyParcels
             var sr = _visuals[cell.x, cell.y];
             var indicator = _indicators[cell.x, cell.y];
 
-            sr.color = GetBaseColor(tile.type);
+            sr.color = GetBaseColor(tile);
 
-            if (tile.type == TileType.Conveyor)
+            if (tile.type == TileType.Conveyor || tile.type == TileType.Delay)
             {
                 indicator.GetComponent<SpriteRenderer>().enabled = true;
-                indicator.GetComponent<SpriteRenderer>().color = new Color(0.1f, 0.3f, 0.1f);
+                indicator.GetComponent<SpriteRenderer>().color = new Color(0.1f, 0.15f, 0.1f);
                 indicator.localScale = new Vector3(0.5f, 0.15f, 1f);
                 indicator.localRotation = Quaternion.Euler(0, 0, tile.direction.ToZRotationDegrees());
                 indicator.localPosition = (Vector3)(Vector2)tile.direction.ToOffset() * 0.3f;
@@ -200,7 +244,7 @@ namespace TrickyParcels
                 arms[armIndex] = go.transform;
             }
             arms[armIndex].localPosition = (Vector3)(Vector2)dir.ToOffset() * 0.35f;
-            arms[armIndex].GetComponent<SpriteRenderer>().color = label == PackageLabel.Blue ? blueColor : orangeColor;
+            arms[armIndex].GetComponent<SpriteRenderer>().color = LabelColors.Get(label);
         }
 
         void ClearSorterArms(Vector2Int cell)
@@ -220,39 +264,42 @@ namespace TrickyParcels
             var tile = _grid[cell.x, cell.y];
             if (warning)
             {
+                AnyJamOccurred = true;
                 float t = Mathf.PingPong(Time.time * 3f, 1f);
-                sr.color = Color.Lerp(GetBaseColor(tile.type), jamWarningColor, t);
+                sr.color = Color.Lerp(GetBaseColor(tile), jamWarningColor, t);
             }
             else
             {
-                sr.color = GetBaseColor(tile.type);
+                sr.color = GetBaseColor(tile);
             }
         }
 
-        Color GetBaseColor(TileType type)
+        Color GetBaseColor(TileData tile)
         {
-            switch (type)
+            switch (tile.type)
             {
                 case TileType.Empty: return emptyColor;
                 case TileType.Conveyor: return conveyorColor;
                 case TileType.Sorter: return sorterColor;
+                case TileType.Delay: return delayColor;
                 case TileType.Spawn: return spawnColor;
-                case TileType.ChuteBlue: return blueColor;
-                case TileType.ChuteOrange: return orangeColor;
+                case TileType.Chute: return LabelColors.Get(tile.chuteLabel);
                 default: return Color.white;
             }
         }
 
+        public int CountPlacedTiles() => _conveyorPlaced + _sorterPlaced + _delayPlaced;
+
         public TileData GetTile(Vector2Int cell) => InBounds(cell) ? _grid[cell.x, cell.y] : null;
 
-        public bool InBounds(Vector2Int cell) => cell.x >= 0 && cell.x < width && cell.y >= 0 && cell.y < height;
+        public bool InBounds(Vector2Int cell) => cell.x >= 0 && cell.x < Width && cell.y >= 0 && cell.y < Height;
 
-        public Vector3 CellToWorld(Vector2Int cell) => new Vector3(cell.x * cellSize, cell.y * cellSize, 0);
+        public Vector3 CellToWorld(Vector2Int cell) => new Vector3(cell.x * 1.2f, cell.y * 1.2f, 0);
 
         public Vector2Int WorldToCell(Vector3 worldPos)
         {
-            int x = Mathf.RoundToInt(worldPos.x / cellSize);
-            int y = Mathf.RoundToInt(worldPos.y / cellSize);
+            int x = Mathf.RoundToInt(worldPos.x / 1.2f);
+            int y = Mathf.RoundToInt(worldPos.y / 1.2f);
             return new Vector2Int(x, y);
         }
     }
