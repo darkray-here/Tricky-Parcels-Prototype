@@ -9,7 +9,7 @@ namespace TrickyParcels
     public enum TileType { Empty, Conveyor, Sorter, Delay, Spawn, Chute }
 
     // Wildcard is a package that can enter ANY chute (Level 3 "Peak Season").
-    public enum PackageLabel { Blue, Orange, Green, Purple, Wildcard }
+    public enum PackageLabel { Blue, Orange, Cyan, Purple, Wildcard }
 
     public enum ToolMode { Conveyor, Sorter, Delay }
 
@@ -55,7 +55,7 @@ namespace TrickyParcels
             {
                 case PackageLabel.Blue: return new Color(0.25f, 0.5f, 0.95f);
                 case PackageLabel.Orange: return new Color(0.95f, 0.55f, 0.15f);
-                case PackageLabel.Green: return new Color(0.35f, 0.75f, 0.35f);
+                case PackageLabel.Cyan: return new Color(0.0f, 0.8f, 0.8f);
                 case PackageLabel.Purple: return new Color(0.6f, 0.35f, 0.85f);
                 case PackageLabel.Wildcard: return new Color(0.8f, 0.8f, 0.2f);
                 default: return Color.white;

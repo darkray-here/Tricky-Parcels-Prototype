@@ -1,17 +1,26 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace TrickyParcels
 {
+    // One row per possible label in the sorter popover. Build 4 of these in the
+    // Editor (the max non-Wildcard labels any level uses); unused rows are hidden.
+    [System.Serializable]
+    public class LabelToggleRow
+    {
+        public GameObject root;
+        public Text nameText;
+        public Button toggleButton;
+        public Text stateText;
+    }
+
     public class UIController : MonoBehaviour
     {
         public static UIController Instance { get; private set; }
 
         [Header("Root")]
-        public GameObject gameplayRoot; // parent of HUD + toolbar + grid camera view
-
-        [Header("Level Select Panel")]
-        public GameObject levelSelectPanel;
+        public GameObject gameplayRoot;
 
         [Header("HUD")]
         public Text levelNameText;
@@ -26,9 +35,8 @@ namespace TrickyParcels
 
         [Header("Sorter Popover")]
         public GameObject sorterPopoverPanel;
-        public Text sorterPopoverLabel;
-        public Button sorterArmACycleButton;
-        public Button sorterArmBCycleButton;
+        public Text sorterPopoverHeaderText;
+        public LabelToggleRow[] labelRows; // size 4, one per possible label
         public Button sorterCloseButton;
 
         [Header("Tutorial")]
@@ -59,9 +67,14 @@ namespace TrickyParcels
             sorterButton.onClick.AddListener(() => SetTool(ToolMode.Sorter));
             delayButton.onClick.AddListener(() => SetTool(ToolMode.Delay));
 
-            sorterArmACycleButton.onClick.AddListener(() => { GridManager.Instance.CycleSorterArm(_activeSorterCell, true); RefreshPopoverLabel(); });
-            sorterArmBCycleButton.onClick.AddListener(() => { GridManager.Instance.CycleSorterArm(_activeSorterCell, false); RefreshPopoverLabel(); });
+            for (int i = 0; i < labelRows.Length; i++)
+            {
+                int rowIndex = i; // capture for closure
+                labelRows[i].toggleButton.onClick.AddListener(() => OnLabelToggleClicked(rowIndex));
+            }
             sorterCloseButton.onClick.AddListener(() => sorterPopoverPanel.SetActive(false));
+            if (sorterPopoverHeaderText != null)
+                sorterPopoverHeaderText.text = "Tap a color to move it: Unassigned -> Arm 1 -> Arm 2";
 
             tutorialNextButton.onClick.AddListener(AdvanceTutorial);
 
@@ -87,12 +100,18 @@ namespace TrickyParcels
         {
             var gm = GameManager.Instance;
             if (gm == null || gm.State != GameState.Playing) return;
+
+            if (gm.GraceRemaining > 0f)
+            {
+                quotaText.text = $"Delivered: 0 / {GridManager.Instance.CurrentConfig.quota}";
+                timerText.text = $"Starting in {Mathf.CeilToInt(gm.GraceRemaining)}...";
+                return;
+            }
+
             quotaText.text = $"Delivered: {gm.Delivered} / {GridManager.Instance.CurrentConfig.quota}";
             timerText.text = $"Time: {Mathf.CeilToInt(gm.TimeRemaining)}s";
         }
 
-        // GridManager checks this every frame before accepting a click, so no
-        // panel has to manually lock/unlock input on open and close.
         public bool IsBlockingPanelOpen()
         {
             return sorterPopoverPanel.activeSelf || tutorialPanel.activeSelf || resultPanel.activeSelf;
@@ -100,7 +119,6 @@ namespace TrickyParcels
 
         public void ShowGameplay(LevelConfig config)
         {
-            levelSelectPanel.SetActive(false);
             gameplayRoot.SetActive(true);
             resultPanel.SetActive(false);
             levelNameText.text = config.levelName;
@@ -152,14 +170,47 @@ namespace TrickyParcels
         {
             _activeSorterCell = cell;
             sorterPopoverPanel.SetActive(true);
-            RefreshPopoverLabel();
+            RefreshLabelRows();
         }
 
-        void RefreshPopoverLabel()
+        void OnLabelToggleClicked(int rowIndex)
+        {
+            var labels = GridManager.Instance.CurrentConfig.labelPool.FindAll(l => l != PackageLabel.Wildcard);
+            if (rowIndex >= labels.Count) return;
+            GridManager.Instance.CycleLabelArmAssignment(_activeSorterCell, labels[rowIndex]);
+            RefreshLabelRows();
+        }
+
+        void RefreshLabelRows()
         {
             var tile = GridManager.Instance.GetTile(_activeSorterCell);
             if (tile == null) return;
-            sorterPopoverLabel.text = $"Arm 1: {tile.armALabel}   Arm 2: {tile.armBLabel}\n(tap a cycle button to change)";
+            var labels = GridManager.Instance.CurrentConfig.labelPool.FindAll(l => l != PackageLabel.Wildcard);
+
+            for (int i = 0; i < labelRows.Length; i++)
+            {
+                if (labelRows[i] == null || labelRows[i].root == null)
+                {
+                    Debug.LogError($"UIController.labelRows[{i}] is not fully wired (root/nameText/toggleButton/stateText).");
+                    continue;
+                }
+
+                if (i < labels.Count)
+                {
+                    var label = labels[i];
+                    labelRows[i].root.SetActive(true);
+                    labelRows[i].nameText.text = label.ToString();
+
+                    string state = tile.armALabels.Contains(label) ? "Arm 1"
+                                 : tile.armBLabels.Contains(label) ? "Arm 2"
+                                 : "Unassigned";
+                    labelRows[i].stateText.text = state;
+                }
+                else
+                {
+                    labelRows[i].root.SetActive(false);
+                }
+            }
         }
 
         public void ShowResult(bool won, string message, int stars)
@@ -174,7 +225,7 @@ namespace TrickyParcels
         string BuildStarString(int stars)
         {
             string s = "";
-            for (int i = 0; i < 3; i++) s += i < stars ? "\u2605" : "\u2606"; // filled/empty star
+            for (int i = 0; i < 3; i++) s += i < stars ? "\u2605" : "\u2606";
             return s;
         }
     }

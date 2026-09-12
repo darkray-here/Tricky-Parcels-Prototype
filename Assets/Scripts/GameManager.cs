@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
 
 namespace TrickyParcels
@@ -13,9 +12,15 @@ namespace TrickyParcels
         public GameState State { get; private set; } = GameState.Idle;
         public int Delivered { get; private set; }
         public float TimeRemaining { get; private set; }
+        public float GraceRemaining => Mathf.Max(0f, _graceRemaining);
+
+        public GameObject levelSelector;
+        public GameObject tutorialPause;
+        public GameObject timerText;
 
         private LevelConfig _config;
         private float _levelTime;
+        private float _graceRemaining;
         private float _spawnTimer;
         private float _spawnBlockedTimer;
         private int _totalCreated;
@@ -23,9 +28,6 @@ namespace TrickyParcels
         private readonly List<BurstEvent> _pendingBursts = new List<BurstEvent>();
         private readonly List<Package> _activePackages = new List<Package>();
         private readonly Dictionary<Vector2Int, List<float>> _chuteDeliveryLog = new Dictionary<Vector2Int, List<float>>();
-
-        [Header("Tutorial Pause")]
-        public GameObject tutorialPanel;
 
         void Awake()
         {
@@ -36,9 +38,11 @@ namespace TrickyParcels
         {
             _config = config;
             State = GameState.Playing;
+            levelSelector.SetActive(false);
             Delivered = 0;
             TimeRemaining = config.timeCap;
             _levelTime = 0f;
+            _graceRemaining = config.startGracePeriod;
             _spawnTimer = 0f;
             _spawnBlockedTimer = 0f;
             _totalCreated = 0;
@@ -55,8 +59,22 @@ namespace TrickyParcels
         void Update()
         {
             if (State != GameState.Playing) return;
-            if (tutorialPanel.gameObject.activeSelf) Time.timeScale = 0f;
-            else Time.timeScale = 1f;
+            if (tutorialPause.activeSelf)
+            {
+                Time.timeScale = 0f;
+                timerText.SetActive(false);
+            }
+            else
+            {
+                Time.timeScale = 1f;
+                timerText.SetActive(true);
+            }
+
+            if (_graceRemaining > 0f)
+            {
+                _graceRemaining -= Time.deltaTime;
+                return; // no spawns, no bursts, timer holds at full during grace
+            }
 
             _levelTime += Time.deltaTime;
             TimeRemaining = Mathf.Max(0f, _config.timeCap - _levelTime);

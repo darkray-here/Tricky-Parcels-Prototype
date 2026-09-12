@@ -59,5 +59,9 @@ namespace TrickyParcels
         public List<BurstEvent> bursts = new List<BurstEvent>();
 
         public int parTileCount;
+
+        // Seconds after load before the first package spawns, so the player can
+        // lay down an opening path first. Doesn't count against timeCap.
+        public float startGracePeriod = 3f;
     }
 }

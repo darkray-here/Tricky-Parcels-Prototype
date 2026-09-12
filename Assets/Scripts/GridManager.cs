@@ -30,7 +30,7 @@ namespace TrickyParcels
         private TileData[,] _grid;
         private SpriteRenderer[,] _visuals;
         private Transform[,] _indicators;
-        private readonly Dictionary<Vector2Int, Transform[]> _sorterArmVisuals = new Dictionary<Vector2Int, Transform[]>();
+        private readonly Dictionary<Vector2Int, List<Transform>> _sorterDots = new Dictionary<Vector2Int, List<Transform>>();
 
         private int _sorterPlaced, _delayPlaced, _conveyorPlaced;
 
@@ -49,6 +49,7 @@ namespace TrickyParcels
 
             if (Input.GetMouseButtonDown(0)) HandleClick(false);
             if (Input.GetMouseButtonDown(1)) HandleClick(true);
+            if (Input.GetMouseButtonDown(2)) HandleMiddleClick();
         }
 
         public void LoadLevel(LevelConfig config)
@@ -61,7 +62,7 @@ namespace TrickyParcels
             _sorterPlaced = 0;
             _delayPlaced = 0;
             _conveyorPlaced = 0;
-            _sorterArmVisuals.Clear();
+            _sorterDots.Clear();
 
             foreach (Transform child in transform) Destroy(child.gameObject);
 
@@ -109,6 +110,23 @@ namespace TrickyParcels
                     RefreshVisual(new Vector2Int(x, y));
         }
 
+        // Middle-click always opens the sorter popover, no matter which tool is
+        // currently selected — no need to switch off the Sorter tool first.
+        void HandleMiddleClick()
+        {
+            if (Camera.main == null) return;
+            Vector3 worldPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            worldPos.z = 0;
+            Vector2Int cell = WorldToCell(worldPos);
+            if (!InBounds(cell)) return;
+
+            var tile = _grid[cell.x, cell.y];
+            if (tile.type == TileType.Sorter)
+            {
+                OnSorterTileClicked?.Invoke(cell);
+            }
+        }
+
         void HandleClick(bool isRightClick)
         {
             if (Camera.main == null) return;
@@ -131,7 +149,15 @@ namespace TrickyParcels
 
             if (tile.type == TileType.Sorter)
             {
-                OnSorterTileClicked?.Invoke(cell);
+                if (currentTool == ToolMode.Sorter)
+                {
+                    tile.direction = tile.direction.RotateClockwise();
+                    RefreshVisual(cell);
+                }
+                else
+                {
+                    OnSorterTileClicked?.Invoke(cell);
+                }
                 return;
             }
 
@@ -157,8 +183,15 @@ namespace TrickyParcels
                         tile.type = TileType.Sorter;
                         tile.direction = Direction.Right;
                         var labels = CurrentConfig.labelPool.FindAll(l => l != PackageLabel.Wildcard);
-                        tile.armALabel = labels.Count > 0 ? labels[0] : PackageLabel.Blue;
-                        tile.armBLabel = labels.Count > 1 ? labels[1] : tile.armALabel;
+                        tile.armALabels = new List<PackageLabel>();
+                        tile.armBLabels = new List<PackageLabel>();
+                        // Sensible starting split so a fresh sorter is usable immediately;
+                        // the player can then reassign any label to either arm (or neither).
+                        for (int i = 0; i < labels.Count; i++)
+                        {
+                            if (i % 2 == 0) tile.armALabels.Add(labels[i]);
+                            else tile.armBLabels.Add(labels[i]);
+                        }
                         _sorterPlaced++;
                         RefreshVisual(cell);
                     }
@@ -181,18 +214,26 @@ namespace TrickyParcels
             }
         }
 
-        // Cycles one sorter arm to the next non-Wildcard label in the level's pool.
-        public void CycleSorterArm(Vector2Int cell, bool armA)
+        // Cycles one label's assignment: Unassigned -> Arm A -> Arm B -> Unassigned.
+        // This is what lets an arm carry MULTIPLE labels (e.g. Blue+Cyan out Arm A).
+        public void CycleLabelArmAssignment(Vector2Int cell, PackageLabel label)
         {
             var tile = GetTile(cell);
             if (tile == null || tile.type != TileType.Sorter) return;
-            var labels = CurrentConfig.labelPool.FindAll(l => l != PackageLabel.Wildcard);
-            if (labels.Count == 0) return;
 
-            PackageLabel current = armA ? tile.armALabel : tile.armBLabel;
-            int idx = labels.IndexOf(current);
-            PackageLabel next = labels[(idx + 1) % labels.Count];
-            if (armA) tile.armALabel = next; else tile.armBLabel = next;
+            if (tile.armALabels.Contains(label))
+            {
+                tile.armALabels.Remove(label);
+                tile.armBLabels.Add(label);
+            }
+            else if (tile.armBLabels.Contains(label))
+            {
+                tile.armBLabels.Remove(label);
+            }
+            else
+            {
+                tile.armALabels.Add(label);
+            }
             RefreshVisual(cell);
         }
 
@@ -211,48 +252,58 @@ namespace TrickyParcels
                 indicator.localScale = new Vector3(0.5f, 0.15f, 1f);
                 indicator.localRotation = Quaternion.Euler(0, 0, tile.direction.ToZRotationDegrees());
                 indicator.localPosition = (Vector3)(Vector2)tile.direction.ToOffset() * 0.3f;
-                ClearSorterArms(cell);
+                ClearSorterDots(cell);
             }
             else if (tile.type == TileType.Sorter)
             {
                 indicator.GetComponent<SpriteRenderer>().enabled = false;
-                DrawSorterArm(cell, tile.direction, tile.armALabel, 0);
-                DrawSorterArm(cell, tile.direction.RotateClockwise(), tile.armBLabel, 1);
+                DrawSorterDots(cell, tile);
             }
             else
             {
                 indicator.GetComponent<SpriteRenderer>().enabled = false;
-                ClearSorterArms(cell);
+                ClearSorterDots(cell);
             }
         }
 
-        void DrawSorterArm(Vector2Int cell, Direction dir, PackageLabel label, int armIndex)
+        void DrawSorterDots(Vector2Int cell, TileData tile)
         {
-            if (!_sorterArmVisuals.TryGetValue(cell, out var arms))
+            ClearSorterDots(cell);
+            var dots = new List<Transform>();
+            dots.AddRange(CreateDotsForArm(cell, tile.direction, tile.armALabels));
+            dots.AddRange(CreateDotsForArm(cell, tile.direction.RotateClockwise(), tile.armBLabels));
+            _sorterDots[cell] = dots;
+        }
+
+        List<Transform> CreateDotsForArm(Vector2Int cell, Direction dir, List<PackageLabel> labels)
+        {
+            var result = new List<Transform>();
+            Vector2Int offset = dir.ToOffset();
+            Vector2 baseOffset = (Vector2)offset * 0.35f;
+            Vector2 perp = new Vector2(-offset.y, offset.x) * 0.16f; // spread multiple dots sideways so they don't overlap
+
+            for (int i = 0; i < labels.Count; i++)
             {
-                arms = new Transform[2];
-                _sorterArmVisuals[cell] = arms;
-            }
-            if (arms[armIndex] == null)
-            {
-                var go = new GameObject($"Arm_{armIndex}");
+                var go = new GameObject($"Dot_{i}");
                 go.transform.SetParent(_visuals[cell.x, cell.y].transform);
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = SpriteFactory.Square();
                 sr.sortingOrder = 2;
-                go.transform.localScale = Vector3.one * 0.25f;
-                arms[armIndex] = go.transform;
+                sr.color = LabelColors.Get(labels[i]);
+                go.transform.localScale = Vector3.one * 0.2f;
+                float spreadIndex = i - (labels.Count - 1) / 2f;
+                go.transform.localPosition = (Vector3)(baseOffset + perp * spreadIndex);
+                result.Add(go.transform);
             }
-            arms[armIndex].localPosition = (Vector3)(Vector2)dir.ToOffset() * 0.35f;
-            arms[armIndex].GetComponent<SpriteRenderer>().color = LabelColors.Get(label);
+            return result;
         }
 
-        void ClearSorterArms(Vector2Int cell)
+        void ClearSorterDots(Vector2Int cell)
         {
-            if (_sorterArmVisuals.TryGetValue(cell, out var arms))
+            if (_sorterDots.TryGetValue(cell, out var dots))
             {
-                foreach (var a in arms) if (a != null) Destroy(a.gameObject);
-                _sorterArmVisuals.Remove(cell);
+                foreach (var d in dots) if (d != null) Destroy(d.gameObject);
+                _sorterDots.Remove(cell);
             }
         }
 

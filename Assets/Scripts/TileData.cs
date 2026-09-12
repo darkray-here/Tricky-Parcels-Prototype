@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace TrickyParcels
 {
     [System.Serializable]
@@ -6,11 +8,11 @@ namespace TrickyParcels
         public TileType type = TileType.Empty;
         public Direction direction = Direction.Right;
 
-        // Sorter only. Arm A points `direction`; Arm B always sits 90 deg
-        // clockwise of Arm A. Each arm is assigned one concrete label
-        // (never Wildcard) via the popover's cycle buttons.
-        public PackageLabel armALabel = PackageLabel.Blue;
-        public PackageLabel armBLabel = PackageLabel.Orange;
+        // Sorter only. Each arm now holds a SET of labels (e.g. Blue+Cyan -> Arm A,
+        // Orange -> Arm B), not just one. Wildcard is never placed in either set;
+        // wildcard packages route dynamically instead (see Package.cs).
+        public List<PackageLabel> armALabels = new List<PackageLabel>();
+        public List<PackageLabel> armBLabels = new List<PackageLabel>();
 
         // Chute only: which label this specific chute accepts.
         public PackageLabel chuteLabel = PackageLabel.Blue;

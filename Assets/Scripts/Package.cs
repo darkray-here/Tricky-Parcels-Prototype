@@ -71,8 +71,8 @@ namespace TrickyParcels
                     // Simplified heuristic: steer toward whichever arm's next cell is free.
                     moveDir = GameManager.Instance.IsCellOccupied(currentCell + armADir.ToOffset(), this) ? armBDir : armADir;
                 }
-                else if (tile.armALabel == label) moveDir = armADir;
-                else if (tile.armBLabel == label) moveDir = armBDir;
+                else if (tile.armALabels.Contains(label)) moveDir = armADir;
+                else if (tile.armBLabels.Contains(label)) moveDir = armBDir;
                 else { MarkStuck(); return; } // this sorter isn't configured for this label yet
             }
             else
