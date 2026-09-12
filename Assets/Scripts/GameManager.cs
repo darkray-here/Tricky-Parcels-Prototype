@@ -24,6 +24,8 @@ namespace TrickyParcels
         private float _spawnTimer;
         private float _spawnBlockedTimer;
         private int _totalCreated;
+        private PackageLabel _lastLabel;
+        private int _streakCount;
         private readonly Queue<PackageLabel> _spawnQueue = new Queue<PackageLabel>();
         private readonly List<BurstEvent> _pendingBursts = new List<BurstEvent>();
         private readonly List<Package> _activePackages = new List<Package>();
@@ -46,6 +48,8 @@ namespace TrickyParcels
             _spawnTimer = 0f;
             _spawnBlockedTimer = 0f;
             _totalCreated = 0;
+            _lastLabel = PackageLabel.Blue;
+            _streakCount = 0;
             _spawnQueue.Clear();
             _chuteDeliveryLog.Clear();
 
@@ -98,7 +102,7 @@ namespace TrickyParcels
             }
 
             _spawnTimer += Time.deltaTime;
-            if (_spawnTimer >= _config.spawnInterval && _totalCreated < _config.quota)
+            if (_spawnTimer >= _config.spawnInterval)
             {
                 _spawnTimer = 0f;
                 _spawnQueue.Enqueue(RandomLabel());
@@ -108,7 +112,27 @@ namespace TrickyParcels
             TryDrainSpawnQueue();
         }
 
-        PackageLabel RandomLabel() => _config.labelPool[Random.Range(0, _config.labelPool.Count)];
+        PackageLabel RandomLabel()
+        {
+            var pool = _config.labelPool;
+            if (pool.Count == 0) return PackageLabel.Blue;
+
+            // 40% chance to repeat the last label (creates streaks/bursts)
+            // Resets after 3 in a row to avoid being too predictable
+            if (_streakCount < 3 && _lastLabel != PackageLabel.Wildcard && Random.value < 0.4f)
+            {
+                _streakCount++;
+                return _lastLabel;
+            }
+
+            // Pick a different label than the last one
+            var candidates = pool.FindAll(l => l != _lastLabel);
+            if (candidates.Count == 0) candidates = pool;
+            var chosen = candidates[Random.Range(0, candidates.Count)];
+            _lastLabel = chosen;
+            _streakCount = 1;
+            return chosen;
+        }
 
         void TryDrainSpawnQueue()
         {

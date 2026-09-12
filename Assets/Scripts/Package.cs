@@ -35,6 +35,13 @@ namespace TrickyParcels
 
         void Update()
         {
+            // Rainbow cycling for wildcard packages
+            if (label == PackageLabel.Wildcard && _sr != null)
+            {
+                float hue = (Time.time * 0.5f) % 1f;
+                _sr.color = Color.HSVToRGB(hue, 0.8f, 1f);
+            }
+
             if (_moveLerp < 1f)
             {
                 _moveLerp += Time.deltaTime / moveInterval;
@@ -55,7 +62,7 @@ namespace TrickyParcels
 
             if (tile.type == TileType.Spawn)
             {
-                moveDir = Direction.Right; // spawn sits on the left edge, only sensible way out
+                moveDir = GridManager.Instance.CurrentConfig.spawnDirection;
             }
             else if (tile.type == TileType.Conveyor || tile.type == TileType.Delay)
             {

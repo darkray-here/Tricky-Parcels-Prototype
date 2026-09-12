@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 namespace TrickyParcels
 {
@@ -10,7 +11,7 @@ namespace TrickyParcels
     {
         public Button button;
         public Text nameText;
-        public Text starsText;
+        public TMP_Text starsText;
     }
 
     public class MenuController : MonoBehaviour
@@ -65,10 +66,11 @@ namespace TrickyParcels
 
         void RefreshLevelSlots()
         {
-            for (int i = 0; i < levelSlots.Length && i < LevelDatabase.Levels.Count; i++)
+            var levels = LevelDatabase.Instance.levels;
+            for (int i = 0; i < levelSlots.Length && i < levels.Count; i++)
             {
                 var slot = levelSlots[i];
-                var config = LevelDatabase.Levels[i];
+                var config = levels[i];
                 bool unlocked = LevelProgress.IsUnlocked(i);
 
                 slot.button.interactable = unlocked;
@@ -81,7 +83,7 @@ namespace TrickyParcels
         string BuildStarString(int stars)
         {
             string s = "";
-            for (int i = 0; i < 3; i++) s += i < stars ? "\u2605" : "\u2606";
+            for (int i = 0; i < 3; i++) s += i < stars ? "<color=#9B59B6>*</color>" : "<color=#666666>-</color>";
             return s;
         }
     }

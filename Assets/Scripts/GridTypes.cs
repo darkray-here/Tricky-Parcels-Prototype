@@ -57,7 +57,10 @@ namespace TrickyParcels
                 case PackageLabel.Orange: return new Color(0.95f, 0.55f, 0.15f);
                 case PackageLabel.Cyan: return new Color(0.0f, 0.8f, 0.8f);
                 case PackageLabel.Purple: return new Color(0.6f, 0.35f, 0.85f);
-                case PackageLabel.Wildcard: return new Color(0.8f, 0.8f, 0.2f);
+                case PackageLabel.Wildcard:
+                    // Rainbow cycling using time
+                    float hue = (Time.time * 0.5f) % 1f;
+                    return Color.HSVToRGB(hue, 0.8f, 1f);
                 default: return Color.white;
             }
         }

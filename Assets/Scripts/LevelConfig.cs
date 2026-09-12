@@ -7,13 +7,7 @@ namespace TrickyParcels
     public class ChuteSpec
     {
         public Vector2Int cell;
-        public PackageLabel label; // Wildcard packages can enter regardless of this
-
-        public ChuteSpec(Vector2Int cell, PackageLabel label)
-        {
-            this.cell = cell;
-            this.label = label;
-        }
+        public PackageLabel label;
     }
 
     [System.Serializable]
@@ -21,47 +15,48 @@ namespace TrickyParcels
     {
         public float atTime;
         public PackageLabel[] labels;
-
-        public BurstEvent(float atTime, PackageLabel[] labels)
-        {
-            this.atTime = atTime;
-            this.labels = labels;
-        }
     }
 
-    // One config drives GridManager + GameManager for a whole level, so
-    // "adding a level" is just adding an entry to LevelDatabase.
     [System.Serializable]
     public class LevelConfig
     {
+        [Header("Info")]
         public string levelName;
         public bool isTutorial;
-        public string[] tutorialHints;
+        [TextArea] public string[] tutorialHints;
 
+        [Header("Grid")]
         public int width;
         public int height;
         public Vector2Int spawnCell;
-        public List<ChuteSpec> chutes;
-        public List<PackageLabel> labelPool;
+        public Direction spawnDirection = Direction.Right;
 
+        [Header("Chutes")]
+        public List<ChuteSpec> chutes;
+
+        [Header("Packages")]
+        public List<PackageLabel> labelPool;
         public int quota;
         public float spawnInterval;
         public float timeCap;
 
+        [Header("Budgets")]
         public int sorterBudget;
         public int delayBudget;
-        public int conveyorBudget; // int.MaxValue = unlimited
-        public float delayDuration = 2f; // fixed pause length, simplified from the GDD's short/medium/long cycle
+        public int conveyorBudget = 999;
+        public float delayDuration = 2f;
 
+        [Header("Chute Capacity")]
         public int chuteCapacityMax = 999;
         public float chuteCapacityWindow = 1f;
 
+        [Header("Bursts")]
         public List<BurstEvent> bursts = new List<BurstEvent>();
 
+        [Header("Star Rating")]
         public int parTileCount;
 
-        // Seconds after load before the first package spawns, so the player can
-        // lay down an opening path first. Doesn't count against timeCap.
+        [Header("Grace")]
         public float startGracePeriod = 3f;
     }
 }

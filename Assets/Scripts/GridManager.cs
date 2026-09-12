@@ -33,6 +33,11 @@ namespace TrickyParcels
         private readonly Dictionary<Vector2Int, List<Transform>> _sorterDots = new Dictionary<Vector2Int, List<Transform>>();
 
         private int _sorterPlaced, _delayPlaced, _conveyorPlaced;
+        public int SorterPlaced => _sorterPlaced;
+        public int DelayPlaced => _delayPlaced;
+        public int ConveyorPlaced => _conveyorPlaced;
+
+        private float _lastRotateTime; // anti-exploit: rotation cooldown
 
         void Awake()
         {
@@ -145,11 +150,20 @@ namespace TrickyParcels
                 return;
             }
 
-            if (tile.type == TileType.Spawn || tile.type == TileType.Chute) return;
+            if (tile.type == TileType.Spawn || tile.type == TileType.Chute)
+            {
+                // Allow rotating the spawn tile's exit direction
+                if (tile.type == TileType.Spawn && currentTool == ToolMode.Conveyor && CanRotate())
+                {
+                    CurrentConfig.spawnDirection = CurrentConfig.spawnDirection.RotateClockwise();
+                    RefreshVisual(cell);
+                }
+                return;
+            }
 
             if (tile.type == TileType.Sorter)
             {
-                if (currentTool == ToolMode.Sorter)
+                if (currentTool == ToolMode.Sorter && CanRotate())
                 {
                     tile.direction = tile.direction.RotateClockwise();
                     RefreshVisual(cell);
@@ -170,7 +184,7 @@ namespace TrickyParcels
                         tile.direction = Direction.Right;
                         _conveyorPlaced++;
                     }
-                    else if (tile.type == TileType.Conveyor)
+                    else if (tile.type == TileType.Conveyor && CanRotate())
                     {
                         tile.direction = tile.direction.RotateClockwise();
                     }
@@ -205,13 +219,22 @@ namespace TrickyParcels
                         tile.delayDuration = CurrentConfig.delayDuration;
                         _delayPlaced++;
                     }
-                    else if (tile.type == TileType.Delay)
+                    else if (tile.type == TileType.Delay && CanRotate())
                     {
                         tile.direction = tile.direction.RotateClockwise();
                     }
                     RefreshVisual(cell);
                     break;
             }
+        }
+
+        // Anti-exploit: rotation has a 0.4s cooldown so you can't micro-manage
+        // packages in real-time by rapidly clicking a tile.
+        bool CanRotate()
+        {
+            if (Time.time - _lastRotateTime < 0.4f) return false;
+            _lastRotateTime = Time.time;
+            return true;
         }
 
         // Cycles one label's assignment: Unassigned -> Arm A -> Arm B -> Unassigned.
@@ -245,13 +268,17 @@ namespace TrickyParcels
 
             sr.color = GetBaseColor(tile);
 
-            if (tile.type == TileType.Conveyor || tile.type == TileType.Delay)
+            if (tile.type == TileType.Conveyor || tile.type == TileType.Delay || tile.type == TileType.Spawn)
             {
                 indicator.GetComponent<SpriteRenderer>().enabled = true;
                 indicator.GetComponent<SpriteRenderer>().color = new Color(0.1f, 0.15f, 0.1f);
                 indicator.localScale = new Vector3(0.5f, 0.15f, 1f);
-                indicator.localRotation = Quaternion.Euler(0, 0, tile.direction.ToZRotationDegrees());
-                indicator.localPosition = (Vector3)(Vector2)tile.direction.ToOffset() * 0.3f;
+                indicator.localRotation = Quaternion.Euler(0, 0, tile.type == TileType.Spawn
+                    ? CurrentConfig.spawnDirection.ToZRotationDegrees()
+                    : tile.direction.ToZRotationDegrees());
+                indicator.localPosition = (Vector3)(Vector2)(tile.type == TileType.Spawn
+                    ? CurrentConfig.spawnDirection.ToOffset()
+                    : tile.direction.ToOffset()) * 0.3f;
                 ClearSorterDots(cell);
             }
             else if (tile.type == TileType.Sorter)

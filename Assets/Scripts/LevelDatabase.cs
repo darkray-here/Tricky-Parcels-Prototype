@@ -3,14 +3,13 @@ using UnityEngine;
 
 namespace TrickyParcels
 {
-    // GDD numbers are used where the doc gives an exact figure (grid size, quota,
-    // labels, sorter/delay/conveyor budgets, par tile count). Where the doc
-    // describes a mechanic without a literal number (capacity window length,
-    // exact burst timing), reasonable values are chosen and called out in the
-    // setup guide's "assumptions" section.
-    public static class LevelDatabase
+    // Levels are pre-populated so they show up in the Inspector.
+    // Edit any field directly in the Inspector — no code changes needed.
+    public class LevelDatabase : MonoBehaviour
     {
-        public static readonly List<LevelConfig> Levels = new List<LevelConfig>
+        public static LevelDatabase Instance { get; private set; }
+
+        public List<LevelConfig> levels = new List<LevelConfig>
         {
             // 0: Tutorial
             new LevelConfig
@@ -19,21 +18,21 @@ namespace TrickyParcels
                 isTutorial = true,
                 tutorialHints = new[]
                 {
-                    "Click an empty tile to place a conveyor.",
-                    "Click a placed conveyor again to rotate it 90 degrees.",
-                    "Route packages from the dark spawn tile toward the sorter.",
-                    "Middle-click a placed sorter at any time to open its color popup, no matter which tool is selected.",
-                    "In the popup, tap a color to cycle it: Unassigned -> Arm 1 -> Arm 2. More than one color can share the same arm.",
-                    "To aim the sorter itself, switch to the Sorter tool and click it to rotate which two directions its arms point.",
-                    "Right-click any tile to clear it. Deliver 3 packages to pass!"
+                    "Welcome! Packages will pop out from the dark tile. Your job? Build a path so they reach the colored chutes!",
+                    "Left-click an empty tile to place a conveyor belt. Click it again to rotate which way it points.",
+                    "See those colored squares at the edges? Those are chutes - each one only accepts packages of its matching color.",
+                    "Packages come in different colors. You need a SORTER to sort them! Switch to the Sorter tool (middle button) and place one.",
+                    "Middle-click a placed sorter to open its popup. Tap a color to assign it: Unassigned -> Arm 1 -> Arm 2.",
+                    "The sorter has two arms pointing in different directions. Use the Sorter tool and click the sorter to rotate which way the arms face.",
+                    "Right-click any tile to remove it. Deliver 3 packages to pass the tutorial. Good luck!"
                 },
                 width = 4,
                 height = 4,
                 spawnCell = new Vector2Int(0, 2),
                 chutes = new List<ChuteSpec>
                 {
-                    new ChuteSpec(new Vector2Int(3, 0), PackageLabel.Blue),
-                    new ChuteSpec(new Vector2Int(3, 3), PackageLabel.Orange),
+                    new ChuteSpec { cell = new Vector2Int(3, 0), label = PackageLabel.Blue },
+                    new ChuteSpec { cell = new Vector2Int(3, 3), label = PackageLabel.Orange },
                 },
                 labelPool = new List<PackageLabel> { PackageLabel.Blue, PackageLabel.Orange },
                 quota = 3,
@@ -41,13 +40,13 @@ namespace TrickyParcels
                 timeCap = 180f,
                 sorterBudget = 1,
                 delayBudget = 0,
-                conveyorBudget = int.MaxValue,
+                conveyorBudget = 8,
                 chuteCapacityMax = 999,
                 startGracePeriod = 2f,
                 parTileCount = 3,
             },
 
-            // 1: "First Sort" (Introductory)
+            // 1: "First Sort"
             new LevelConfig
             {
                 levelName = "First Sort",
@@ -57,21 +56,21 @@ namespace TrickyParcels
                 spawnCell = new Vector2Int(0, 2),
                 chutes = new List<ChuteSpec>
                 {
-                    new ChuteSpec(new Vector2Int(4, 0), PackageLabel.Blue),
-                    new ChuteSpec(new Vector2Int(4, 4), PackageLabel.Orange),
+                    new ChuteSpec { cell = new Vector2Int(4, 0), label = PackageLabel.Blue },
+                    new ChuteSpec { cell = new Vector2Int(4, 4), label = PackageLabel.Orange },
                 },
                 labelPool = new List<PackageLabel> { PackageLabel.Blue, PackageLabel.Orange },
                 quota = 5,
-                spawnInterval = 3f,
-                timeCap = 90f,
+                spawnInterval = 2.5f,
+                timeCap = 60f,
                 sorterBudget = 1,
                 delayBudget = 0,
-                conveyorBudget = int.MaxValue,
-                chuteCapacityMax = 5, // "never a real constraint" per the GDD
+                conveyorBudget = 10,
+                chuteCapacityMax = 5,
                 parTileCount = 4,
             },
 
-            // 2: "Rush Hour" (Intermediate)
+            // 2: "Rush Hour"
             new LevelConfig
             {
                 levelName = "Rush Hour",
@@ -81,63 +80,69 @@ namespace TrickyParcels
                 spawnCell = new Vector2Int(0, 3),
                 chutes = new List<ChuteSpec>
                 {
-                    new ChuteSpec(new Vector2Int(5, 0), PackageLabel.Blue),
-                    new ChuteSpec(new Vector2Int(5, 3), PackageLabel.Orange),
-                    new ChuteSpec(new Vector2Int(5, 5), PackageLabel.Cyan),
+                    new ChuteSpec { cell = new Vector2Int(5, 0), label = PackageLabel.Blue },
+                    new ChuteSpec { cell = new Vector2Int(5, 3), label = PackageLabel.Orange },
+                    new ChuteSpec { cell = new Vector2Int(5, 5), label = PackageLabel.Cyan },
                 },
                 labelPool = new List<PackageLabel> { PackageLabel.Blue, PackageLabel.Orange, PackageLabel.Cyan },
                 quota = 10,
-                spawnInterval = 3f,
-                timeCap = 120f,
+                spawnInterval = 2.5f,
+                timeCap = 90f,
                 sorterBudget = 2,
                 delayBudget = 1,
-                conveyorBudget = 15,
+                conveyorBudget = 12,
                 delayDuration = 2.5f,
                 chuteCapacityMax = 3,
                 chuteCapacityWindow = 5f,
                 bursts = new List<BurstEvent>
                 {
-                    new BurstEvent(40f, new[] { PackageLabel.Blue, PackageLabel.Blue, PackageLabel.Blue }),
-                    new BurstEvent(80f, new[] { PackageLabel.Cyan, PackageLabel.Cyan, PackageLabel.Cyan }),
+                    new BurstEvent { atTime = 30f, labels = new[] { PackageLabel.Blue, PackageLabel.Blue, PackageLabel.Blue } },
+                    new BurstEvent { atTime = 60f, labels = new[] { PackageLabel.Cyan, PackageLabel.Cyan, PackageLabel.Cyan } },
                 },
                 parTileCount = 8,
             },
 
-            // 3: "Peak Season" (Advanced)
+            // 3: "Peak Season"
             new LevelConfig
             {
                 levelName = "Peak Season",
-                startGracePeriod = 10f,
+                startGracePeriod = 8f,
                 width = 7,
                 height = 7,
                 spawnCell = new Vector2Int(0, 3),
                 chutes = new List<ChuteSpec>
                 {
-                    new ChuteSpec(new Vector2Int(6, 0), PackageLabel.Blue),
-                    new ChuteSpec(new Vector2Int(6, 2), PackageLabel.Orange),
-                    new ChuteSpec(new Vector2Int(6, 4), PackageLabel.Cyan),
-                    new ChuteSpec(new Vector2Int(6, 6), PackageLabel.Purple),
+                    new ChuteSpec { cell = new Vector2Int(6, 0), label = PackageLabel.Blue },
+                    new ChuteSpec { cell = new Vector2Int(6, 2), label = PackageLabel.Orange },
+                    new ChuteSpec { cell = new Vector2Int(6, 4), label = PackageLabel.Cyan },
+                    new ChuteSpec { cell = new Vector2Int(6, 6), label = PackageLabel.Purple },
                 },
                 labelPool = new List<PackageLabel>
                 {
                     PackageLabel.Blue, PackageLabel.Orange, PackageLabel.Cyan, PackageLabel.Purple, PackageLabel.Wildcard
                 },
                 quota = 15,
-                spawnInterval = 3f,
-                timeCap = 150f,
+                spawnInterval = 2f,
+                timeCap = 120f,
                 sorterBudget = 3,
                 delayBudget = 2,
-                conveyorBudget = 20,
+                conveyorBudget = 16,
                 delayDuration = 2f,
                 chuteCapacityMax = 2,
                 chuteCapacityWindow = 5f,
                 bursts = new List<BurstEvent>
                 {
-                    new BurstEvent(50f, new[] { PackageLabel.Blue, PackageLabel.Orange }),
-                    new BurstEvent(100f, new[] { PackageLabel.Cyan, PackageLabel.Purple }),
+                    new BurstEvent { atTime = 30f, labels = new[] { PackageLabel.Blue, PackageLabel.Orange } },
+                    new BurstEvent { atTime = 60f, labels = new[] { PackageLabel.Cyan, PackageLabel.Purple } },
+                    new BurstEvent { atTime = 90f, labels = new[] { PackageLabel.Wildcard, PackageLabel.Wildcard } },
                 },
                 parTileCount = 15,
             },
         };
+
+        void Awake()
+        {
+            Instance = this;
+        }
     }
 }

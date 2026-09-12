@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 namespace TrickyParcels
 {
@@ -32,6 +33,9 @@ namespace TrickyParcels
         public Button conveyorButton;
         public Button sorterButton;
         public Button delayButton;
+        public Text conveyorCountText; // remaining conveyor budget
+        public Text sorterCountText;   // remaining sorter budget
+        public Text delayCountText;    // remaining delay budget
 
         [Header("Sorter Popover")]
         public GameObject sorterPopoverPanel;
@@ -47,7 +51,7 @@ namespace TrickyParcels
         [Header("Result")]
         public GameObject resultPanel;
         public Text resultText;
-        public Text resultStarsText;
+        public TMP_Text resultStarsText;
         public Button nextLevelButton;
         public Button retryButton;
         public Button levelSelectButton;
@@ -101,15 +105,39 @@ namespace TrickyParcels
             var gm = GameManager.Instance;
             if (gm == null || gm.State != GameState.Playing) return;
 
+            var grid = GridManager.Instance;
+            var config = grid.CurrentConfig;
+
             if (gm.GraceRemaining > 0f)
             {
-                quotaText.text = $"Delivered: 0 / {GridManager.Instance.CurrentConfig.quota}";
+                quotaText.text = $"Delivered: 0 / {config.quota}";
                 timerText.text = $"Starting in {Mathf.CeilToInt(gm.GraceRemaining)}...";
+                UpdateTileCounter(config, grid);
                 return;
             }
 
-            quotaText.text = $"Delivered: {gm.Delivered} / {GridManager.Instance.CurrentConfig.quota}";
+            quotaText.text = $"Delivered: {gm.Delivered} / {config.quota}";
             timerText.text = $"Time: {Mathf.CeilToInt(gm.TimeRemaining)}s";
+            UpdateTileCounter(config, grid);
+        }
+
+        void UpdateTileCounter(LevelConfig config, GridManager grid)
+        {
+            if (conveyorCountText != null)
+            {
+                int left = config.conveyorBudget >= 999 ? 999 : config.conveyorBudget - grid.ConveyorPlaced;
+                conveyorCountText.text = left.ToString();
+            }
+            if (sorterCountText != null)
+            {
+                int left = config.sorterBudget - grid.SorterPlaced;
+                sorterCountText.text = left.ToString();
+            }
+            if (delayCountText != null)
+            {
+                int left = config.delayBudget - grid.DelayPlaced;
+                delayCountText.text = left.ToString();
+            }
         }
 
         public bool IsBlockingPanelOpen()
@@ -225,7 +253,7 @@ namespace TrickyParcels
         string BuildStarString(int stars)
         {
             string s = "";
-            for (int i = 0; i < 3; i++) s += i < stars ? "\u2605" : "\u2606";
+            for (int i = 0; i < 3; i++) s += i < stars ? "<color=#9B59B6>*</color>" : "<color=#666666>-</color>";
             return s;
         }
     }
